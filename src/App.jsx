@@ -22,16 +22,44 @@ const C = {
 // ===== Prisma-wide constants from 26-27 Conservative budget =====
 const TOTAL_PRISMA_REVENUE = 8089298;
 const TOTAL_PRISMA_EXPENSES = 7305424;
-const DIRECT_COACH_TOTAL = 515797 + 1181266 + 279257 + 240960 + 1649145;
-const SHARED_OVERHEAD = TOTAL_PRISMA_EXPENSES - DIRECT_COACH_TOTAL;
+
+// Shared overhead pool — excludes direct coach subtotals, all 4 Heads of School
+// (Leena=HS, Natalie=MS, Javi=LS, Head of A&O), and the $712,598 curriculum+C&C pool.
+// Matches the allocation method in the program comparator.
+// = $7,305,424 - $3,866,425 (direct coaches) - $564,346 (4 heads) - $712,598 (curriculum+C&C)
+// = $2,162,055
+const SHARED_OVERHEAD = 2162055;
+
+// Curriculum pool: Helen + curriculum team (Gabe, Emily B, Leandra, Ariel, Sarah)
+// Cindy (Community & Culture) excluded — she serves Americas + EMEA only, not A&O
+const CURRICULUM_POOL = 609546;
+
+// To compute A&O's share of the curriculum pool, we need the denominator:
+// total non-HS revenue across Americas + EMEA + A&O non-HS tiers.
+// Americas + EMEA non-HS default counts come from the comparator tool;
+// we fold their revenue into the denominator as a constant based on blended rates.
+// Blended rates: FP $10,631, PC $5,600.
+// Americas non-HS: 80 LS FP + 34 LS PC + 240 MS FP + 118 MS PC
+// EMEA non-HS:     11 LS FP + 6 LS PC + 32 MS FP + 14 MS PC
+// = (80+240+11+32)×$10,631 + (34+118+6+14)×$5,600
+// = 363×$10,631 + 172×$5,600
+// = $3,859,053 + $963,200
+// = $4,822,253
+const NON_AO_NON_HS_REVENUE = 4822253;
 
 // ===== Rules =====
-const LS_THRESHOLD = 22;
-const MS_THRESHOLD = 24;
+const LS_THRESHOLD = 20;
+const MS_THRESHOLD = 23;
+const HS_THRESHOLD = 25;
 
 // ===== Benchmarks (coach salary / cohort revenue) =====
 const BENCH_LS = 0.32;
 const BENCH_MS = 0.25;
+// HS benchmark derived from Americas HS at scale (comparator defaults):
+// (11 mentors × $85K + 4 HS math × $89K + HS Head of School $179K) / (260 × $11,241)
+// = $1,470,096 / $2,922,660 = 50.3%
+// Includes Head of School for apples-to-apples comparison (A&O HS includes Head of A&O)
+const BENCH_HS = 0.50;
 
 const DEFAULT_SCENARIO = {
   name: "Current plan (26-27 Conservative)",
@@ -40,23 +68,24 @@ const DEFAULT_SCENARIO = {
   mathSalary: 70000,
   mathEnabled: true,
   contractors: 35000,
-  lsFullProgram: 8,
-  lsParentCoach: 5,
+  lsFullProgram: 11,
+  lsParentCoach: 6,
   msFullProgram: 32,
   msParentCoach: 14,
-  hsLearners: 5,
-  fpRate: 10618,
+  hsLearners: 15,
+  fpRate: 10631,
   hsRate: 11241,
-  pcRate: 4930,
+  pcRate: 5600,
   lsOverride: null,
   msOverride: null,
+  hsOverride: null,
 };
 
 const PRESET_SCENARIOS = [
   { ...DEFAULT_SCENARIO, name: "Current plan (26-27 Conservative)" },
   { ...DEFAULT_SCENARIO, name: "Growth case: +15 MS learners", msFullProgram: 47, msParentCoach: 14 },
-  { ...DEFAULT_SCENARIO, name: "HS expansion: 15 HS learners", hsLearners: 15, contractors: 60000 },
-  { ...DEFAULT_SCENARIO, name: "Aggressive: full A&O buildout", msFullProgram: 55, msParentCoach: 20, lsFullProgram: 15, lsParentCoach: 8, hsLearners: 12, contractors: 50000 },
+  { ...DEFAULT_SCENARIO, name: "HS expansion: 25 HS learners", hsLearners: 25, contractors: 60000 },
+  { ...DEFAULT_SCENARIO, name: "Aggressive: full A&O buildout", msFullProgram: 55, msParentCoach: 20, lsFullProgram: 15, lsParentCoach: 8, hsLearners: 20, contractors: 50000 },
 ];
 
 // ===== Formatters =====
@@ -84,34 +113,55 @@ function computePnL(s) {
   const msTotal = s.msFullProgram + s.msParentCoach;
   const aoTotal = lsTotal + msTotal + s.hsLearners;
 
+  // Coach auto-counts (LS and MS include PC learners since they slot into mentor cohorts in A&O)
   const lsAuto = ceilDiv(lsTotal, LS_THRESHOLD);
   const msAuto = ceilDiv(msTotal, MS_THRESHOLD);
+  const hsAuto = ceilDiv(s.hsLearners, HS_THRESHOLD);
   const lsCoaches = s.lsOverride !== null && s.lsOverride !== undefined ? s.lsOverride : lsAuto;
   const msCoaches = s.msOverride !== null && s.msOverride !== undefined ? s.msOverride : msAuto;
+  const hsCoaches = s.hsOverride !== null && s.hsOverride !== undefined ? s.hsOverride : hsAuto;
 
+  // Cohort revenue (used for cost-ratio strip)
   const lsRev = s.lsFullProgram * s.fpRate + s.lsParentCoach * s.pcRate;
   const msRev = s.msFullProgram * s.fpRate + s.msParentCoach * s.pcRate;
   const hsRev = s.hsLearners * s.hsRate;
 
+  // Cost by cohort (direct coach attribution for the ratio strip)
   const lsCoachCost = lsCoaches * s.mentorSalary;
   const msCoachCost = msCoaches * s.mentorSalary;
-  const hsCoachCost = s.headSalary;
+  // HS cohort: Head of A&O + any HS mentor coaches (typically 0 in A&O for now)
+  const hsCoachCost = s.headSalary + hsCoaches * s.mentorSalary;
 
+  // Cohort ratios
   const lsRatio = lsRev > 0 ? lsCoachCost / lsRev : 0;
   const msRatio = msRev > 0 ? msCoachCost / msRev : 0;
   const hsRatio = hsRev > 0 ? hsCoachCost / hsRev : 0;
 
+  // Revenue
   const revFP = (s.lsFullProgram + s.msFullProgram) * s.fpRate;
   const revHS = hsRev;
   const revPC = (s.lsParentCoach + s.msParentCoach) * s.pcRate;
   const revenue = revFP + revHS + revPC;
 
-  const costMentor = (lsCoaches + msCoaches) * s.mentorSalary;
+  // Direct costs
+  const costMentor = (lsCoaches + msCoaches + hsCoaches) * s.mentorSalary;
   const costMath = s.mathEnabled ? s.mathSalary : 0;
   const costHead = s.headSalary;
   const costContract = s.contractors;
-  const directCost = costHead + costMentor + costMath + costContract;
 
+  // Curriculum pool allocation — A&O's share of $609,546 (Helen + curriculum team, no Cindy)
+  // Revenue-weighted against total non-HS revenue across all 12 region×tier cells.
+  // A&O's non-HS revenue is lsRev + msRev. Denominator = A&O non-HS + NON_AO_NON_HS_REVENUE.
+  const aoNonHsRev = lsRev + msRev;
+  const currDenom = aoNonHsRev + NON_AO_NON_HS_REVENUE;
+  const aoCurricShare = currDenom > 0 ? aoNonHsRev / currDenom : 0;
+  const costCurricAlloc = CURRICULUM_POOL * aoCurricShare;
+
+  // Direct cost = coaches + math + head + contractors + curriculum allocation
+  const directCost = costHead + costMentor + costMath + costContract + costCurricAlloc;
+
+  // Shared overhead (revenue-weighted share of $2,162,055 pool)
+  // This pool already excludes Cindy (in C&C), Natalie (MS Head), Javi (LS Head), Leena (HS Head)
   const revShare = TOTAL_PRISMA_REVENUE > 0 ? revenue / TOTAL_PRISMA_REVENUE : 0;
   const allocatedOH = SHARED_OVERHEAD * revShare;
 
@@ -122,12 +172,13 @@ function computePnL(s) {
 
   return {
     lsTotal, msTotal, aoTotal,
-    lsAuto, msAuto, lsCoaches, msCoaches,
+    lsAuto, msAuto, hsAuto, lsCoaches, msCoaches, hsCoaches,
     lsRev, msRev, hsRev,
     lsCoachCost, msCoachCost, hsCoachCost,
     lsRatio, msRatio, hsRatio,
     revFP, revHS, revPC, revenue,
-    costMentor, costMath, costHead, costContract, directCost,
+    costMentor, costMath, costHead, costContract, costCurricAlloc,
+    aoCurricShare, directCost,
     revShare, allocatedOH,
     directContrib, directMargin, fullyLoaded, loadedMargin,
   };
@@ -278,7 +329,7 @@ function CostRatioStrip({ pnl }) {
           label="High school"
           hasData={pnl.hsRev > 0}
           revenue={pnl.hsRev} coachCost={pnl.hsCoachCost}
-          ratio={pnl.hsRatio} benchmark={BENCH_MS} showBench={false}
+          ratio={pnl.hsRatio} benchmark={BENCH_HS} showBench={true}
           subLabel="Head of A&O leads"
         />
       </div>
@@ -294,11 +345,12 @@ function PnLTable({ scenario, pnl }) {
     { lbl: "Parent coach tuition", amt: pnl.revPC, detail: `${scenario.lsParentCoach + scenario.msParentCoach} learners × ${fmtUSD(scenario.pcRate)}` },
     { lbl: "Total revenue", amt: pnl.revenue, bold: true, detail: `${pnl.aoTotal} total learners`, rule: true },
     { lbl: "Head of A&O", amt: -pnl.costHead, detail: "Leads HS cohort" },
-    { lbl: "Mentor coaches", amt: -pnl.costMentor, detail: `${pnl.lsCoaches + pnl.msCoaches} coaches × ${fmtUSD(scenario.mentorSalary)}` },
+    { lbl: "Mentor coaches", amt: -pnl.costMentor, detail: `${pnl.lsCoaches + pnl.msCoaches + pnl.hsCoaches} coaches × ${fmtUSD(scenario.mentorSalary)}` },
     { lbl: "Math coach", amt: -pnl.costMath, detail: scenario.mathEnabled ? "1 coach" : "not included" },
     { lbl: "Contractors", amt: -pnl.costContract, detail: "Annual budget" },
+    { lbl: "Curriculum team (allocated)", amt: -pnl.costCurricAlloc, detail: `Revenue-weighted share of $${CURRICULUM_POOL.toLocaleString()} · excludes Cindy` },
     { lbl: "Direct contribution", amt: pnl.directContrib, bold: true, detail: `${fmtPct(pnl.directMargin)} margin`, rule: true },
-    { lbl: "Allocated overhead", amt: -pnl.allocatedOH, detail: `Revenue-weighted (${fmtPct(pnl.revShare)} of Prisma)` },
+    { lbl: "Allocated shared overhead", amt: -pnl.allocatedOH, detail: `Revenue-weighted (${fmtPct(pnl.revShare)} of Prisma)` },
     { lbl: "Fully-loaded contribution", amt: pnl.fullyLoaded, bold: true, highlight: true, detail: `${fmtPct(pnl.loadedMargin)} margin` },
   ];
 
@@ -392,11 +444,12 @@ function ComparisonRow({ scenarios }) {
     { lbl: "Revenue", values: pnls.map((p) => p.revenue), fmt: fmtK },
     { lbl: "LS coach ratio", values: pnls.map((p) => p.lsRatio), fmt: fmtPct1, bench: BENCH_LS },
     { lbl: "MS coach ratio", values: pnls.map((p) => p.msRatio), fmt: fmtPct1, bench: BENCH_MS },
+    { lbl: "HS coach ratio", values: pnls.map((p) => p.hsRatio), fmt: fmtPct1, bench: BENCH_HS },
     { lbl: "Direct contribution", values: pnls.map((p) => p.directContrib), fmt: fmtK, contribution: true },
     { lbl: "Direct margin", values: pnls.map((p) => p.directMargin), fmt: fmtPct, contribution: true },
     { lbl: "Fully loaded", values: pnls.map((p) => p.fullyLoaded), fmt: fmtK, contribution: true },
     { lbl: "Loaded margin", values: pnls.map((p) => p.loadedMargin), fmt: fmtPct, contribution: true },
-    { lbl: "Mentor coaches", values: pnls.map((p) => p.lsCoaches + p.msCoaches), fmt: (v) => v.toString() },
+    { lbl: "Mentor coaches", values: pnls.map((p) => p.lsCoaches + p.msCoaches + p.hsCoaches), fmt: (v) => v.toString() },
   ];
 
   const headStyle = {
@@ -461,24 +514,26 @@ export default function App() {
   const [showPresets, setShowPresets] = useState(false);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("ao-scenarios");
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed.scenarios && parsed.scenarios.length) {
-          setScenarios(parsed.scenarios);
-          setActiveIdx(Math.min(parsed.activeIdx || 0, parsed.scenarios.length - 1));
+    (async () => {
+      try {
+        const result = await window.storage.get("ao-scenarios-v2");
+        if (result && result.value) {
+          const parsed = JSON.parse(result.value);
+          if (parsed.scenarios && parsed.scenarios.length) {
+            setScenarios(parsed.scenarios);
+            setActiveIdx(Math.min(parsed.activeIdx || 0, parsed.scenarios.length - 1));
+          }
         }
-      }
-    } catch (e) { /* no prior save or parse error */ }
-    setLoaded(true);
+      } catch (e) { /* no prior save */ }
+      setLoaded(true);
+    })();
   }, []);
 
   useEffect(() => {
     if (!loaded) return;
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       try {
-        localStorage.setItem("ao-scenarios", JSON.stringify({ scenarios, activeIdx }));
+        await window.storage.set("ao-scenarios-v2", JSON.stringify({ scenarios, activeIdx }));
         setSaveStatus("Saved");
         setTimeout(() => setSaveStatus(""), 1500);
       } catch (e) { setSaveStatus("Save failed"); }
@@ -650,8 +705,9 @@ export default function App() {
             {[
               { key: "ls", label: "LS mentor coaches", count: pnl.lsCoaches, auto: pnl.lsAuto, override: scenario.lsOverride, updateKey: "lsOverride", threshold: LS_THRESHOLD, total: pnl.lsTotal, prefix: "LS" },
               { key: "ms", label: "MS mentor coaches", count: pnl.msCoaches, auto: pnl.msAuto, override: scenario.msOverride, updateKey: "msOverride", threshold: MS_THRESHOLD, total: pnl.msTotal, prefix: "MS" },
-            ].map((row, idx) => (
-              <div key={row.key} style={{ marginBottom: idx === 0 ? 16 : 0 }}>
+              { key: "hs", label: "HS mentor coaches", count: pnl.hsCoaches, auto: pnl.hsAuto, override: scenario.hsOverride, updateKey: "hsOverride", threshold: HS_THRESHOLD, total: scenario.hsLearners, prefix: "HS" },
+            ].map((row, idx, arr) => (
+              <div key={row.key} style={{ marginBottom: idx < arr.length - 1 ? 16 : 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
                   <label style={{ fontSize: 13, color: C.textSoft }}>{row.label}</label>
                   <span style={{ fontSize: 20, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: C.text }}>{row.count}</span>
@@ -676,7 +732,9 @@ export default function App() {
                   )}
                 </div>
                 <p style={{ margin: "6px 0 0", fontSize: 11, color: C.textFaint }}>
-                  Rule: 1 coach per {row.threshold} {row.prefix} learners (Full + Parent coach). Currently {row.total} {row.prefix} learners.
+                  {row.prefix === "HS"
+                    ? `Rule: 1 coach per ${row.threshold} HS learners. Currently ${row.total} HS learners. Head of A&O leads by default.`
+                    : `Rule: 1 coach per ${row.threshold} ${row.prefix} learners (Full + Parent coach). Currently ${row.total} ${row.prefix} learners.`}
                 </p>
               </div>
             ))}
@@ -712,7 +770,7 @@ export default function App() {
         {/* Footer */}
         <footer style={{ marginTop: 40, paddingTop: 18, borderTop: `0.5px solid ${C.line}`, fontSize: 11, color: C.textFaint, lineHeight: 1.6 }}>
           <p style={{ margin: 0 }}>
-            Shared overhead ({fmtK(SHARED_OVERHEAD)}) allocated revenue-weighted against Prisma total ({fmtK(TOTAL_PRISMA_REVENUE)}). Scenarios save automatically. Coach thresholds: 22 LS, 24 MS. HS cohort led by Head of A&amp;O with contractor support as budgeted. Benchmarks: MS average 25%, LS average 32%.
+            Shared overhead ({fmtK(SHARED_OVERHEAD)}) allocated revenue-weighted against Prisma total ({fmtK(TOTAL_PRISMA_REVENUE)}). Curriculum pool ({fmtK(CURRICULUM_POOL)}) allocated revenue-weighted across all non-HS learners in A&amp;O, EMEA, and Americas. Excludes Cindy (Community & Culture, Americas + EMEA only), Leena (HS Head of School), Natalie (MS Head of School), Javi (LS Head of School) — all directly attributed to their own tiers elsewhere. Scenarios save automatically. Coach thresholds: {LS_THRESHOLD} LS, {MS_THRESHOLD} MS, {HS_THRESHOLD} HS. Benchmarks: LS 32%, MS 25%, HS 50% (derived from Americas HS at scale: coaches + Head of School).
           </p>
         </footer>
 
