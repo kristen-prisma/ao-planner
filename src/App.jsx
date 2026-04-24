@@ -1,50 +1,33 @@
 import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Copy, Info, RotateCcw } from "lucide-react";
 
-// ===== Palette =====
+// ===== Prisma palette =====
 const C = {
-  bone: "#faf9f6",
-  indigo: "#693efe",
-  text: "#1a2b35",
-  green: "#24c873",
-  sky: "#d8edff",
-  textSoft: "#5a6872",
-  textFaint: "#8b959d",
-  line: "#e6e2d8",
-  lineSoft: "#efece3",
-  paper: "#ffffff",
-  indigoSoft: "#ede8ff",
-  greenSoft: "#d9f5e5",
-  red: "#c0392b",
-  redSoft: "#fae5e2",
+  bone:        "#faf9f6",
+  paper:       "#ffffff",
+  indigo:      "#693efe",   // Prisma Purple
+  indigoSoft:  "#ede8ff",   // Lilac
+  text:        "#202020",   // Ink
+  textSoft:    "#595959",   // Muted
+  textFaint:   "#898989",   // Muted-hover
+  line:        "#d9d4c7",   // warm hairline on Bone
+  lineSoft:    "#eae6da",
+  green:       "#22c973",   // Fern
+  greenSoft:   "#d9f5e5",
+  red:         "#fc5e48",   // Poppy
+  redSoft:     "#ffd3cb",   // Peche
+  sky:         "#d8edff",   // Arctic
+  highlighter: "#f9ff83",   // Highlighter Yellow
 };
+
+const FONT_SANS = '"DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
+const FONT_MONO = '"Roboto Mono", ui-monospace, Menlo, Consolas, monospace';
 
 // ===== Prisma-wide constants from 26-27 Conservative budget =====
 const TOTAL_PRISMA_REVENUE = 8089298;
 const TOTAL_PRISMA_EXPENSES = 7305424;
-
-// Shared overhead pool — excludes direct coach subtotals, all 4 Heads of School
-// (Leena=HS, Natalie=MS, Javi=LS, Head of A&O), and the $712,598 curriculum+C&C pool.
-// Matches the allocation method in the program comparator.
-// = $7,305,424 - $3,866,425 (direct coaches) - $564,346 (4 heads) - $712,598 (curriculum+C&C)
-// = $2,162,055
 const SHARED_OVERHEAD = 2162055;
-
-// Curriculum pool: Helen + curriculum team (Gabe, Emily B, Leandra, Ariel, Sarah)
-// Cindy (Community & Culture) excluded — she serves Americas + EMEA only, not A&O
 const CURRICULUM_POOL = 609546;
-
-// To compute A&O's share of the curriculum pool, we need the denominator:
-// total non-HS revenue across Americas + EMEA + A&O non-HS tiers.
-// Americas + EMEA non-HS default counts come from the comparator tool;
-// we fold their revenue into the denominator as a constant based on blended rates.
-// Blended rates: FP $10,631, PC $5,600.
-// Americas non-HS: 80 LS FP + 34 LS PC + 240 MS FP + 118 MS PC
-// EMEA non-HS:     11 LS FP + 6 LS PC + 32 MS FP + 14 MS PC
-// = (80+240+11+32)×$10,631 + (34+118+6+14)×$5,600
-// = 363×$10,631 + 172×$5,600
-// = $3,859,053 + $963,200
-// = $4,822,253
 const NON_AO_NON_HS_REVENUE = 4822253;
 
 // ===== Rules =====
@@ -52,13 +35,9 @@ const LS_THRESHOLD = 20;
 const MS_THRESHOLD = 23;
 const HS_THRESHOLD = 25;
 
-// ===== Benchmarks (coach salary / cohort revenue) =====
+// ===== Benchmarks =====
 const BENCH_LS = 0.32;
 const BENCH_MS = 0.25;
-// HS benchmark derived from Americas HS at scale (comparator defaults):
-// (11 mentors × $85K + 4 HS math × $89K + HS Head of School $179K) / (260 × $11,241)
-// = $1,470,096 / $2,922,660 = 50.3%
-// Includes Head of School for apples-to-apples comparison (A&O HS includes Head of A&O)
 const BENCH_HS = 0.50;
 
 const DEFAULT_SCENARIO = {
@@ -113,7 +92,6 @@ function computePnL(s) {
   const msTotal = s.msFullProgram + s.msParentCoach;
   const aoTotal = lsTotal + msTotal + s.hsLearners;
 
-  // Coach auto-counts (LS and MS include PC learners since they slot into mentor cohorts in A&O)
   const lsAuto = ceilDiv(lsTotal, LS_THRESHOLD);
   const msAuto = ceilDiv(msTotal, MS_THRESHOLD);
   const hsAuto = ceilDiv(s.hsLearners, HS_THRESHOLD);
@@ -121,47 +99,35 @@ function computePnL(s) {
   const msCoaches = s.msOverride !== null && s.msOverride !== undefined ? s.msOverride : msAuto;
   const hsCoaches = s.hsOverride !== null && s.hsOverride !== undefined ? s.hsOverride : hsAuto;
 
-  // Cohort revenue (used for cost-ratio strip)
   const lsRev = s.lsFullProgram * s.fpRate + s.lsParentCoach * s.pcRate;
   const msRev = s.msFullProgram * s.fpRate + s.msParentCoach * s.pcRate;
   const hsRev = s.hsLearners * s.hsRate;
 
-  // Cost by cohort (direct coach attribution for the ratio strip)
   const lsCoachCost = lsCoaches * s.mentorSalary;
   const msCoachCost = msCoaches * s.mentorSalary;
-  // HS cohort: Head of A&O + any HS mentor coaches (typically 0 in A&O for now)
   const hsCoachCost = s.headSalary + hsCoaches * s.mentorSalary;
 
-  // Cohort ratios
   const lsRatio = lsRev > 0 ? lsCoachCost / lsRev : 0;
   const msRatio = msRev > 0 ? msCoachCost / msRev : 0;
   const hsRatio = hsRev > 0 ? hsCoachCost / hsRev : 0;
 
-  // Revenue
   const revFP = (s.lsFullProgram + s.msFullProgram) * s.fpRate;
   const revHS = hsRev;
   const revPC = (s.lsParentCoach + s.msParentCoach) * s.pcRate;
   const revenue = revFP + revHS + revPC;
 
-  // Direct costs
   const costMentor = (lsCoaches + msCoaches + hsCoaches) * s.mentorSalary;
   const costMath = s.mathEnabled ? s.mathSalary : 0;
   const costHead = s.headSalary;
   const costContract = s.contractors;
 
-  // Curriculum pool allocation — A&O's share of $609,546 (Helen + curriculum team, no Cindy)
-  // Revenue-weighted against total non-HS revenue across all 12 region×tier cells.
-  // A&O's non-HS revenue is lsRev + msRev. Denominator = A&O non-HS + NON_AO_NON_HS_REVENUE.
   const aoNonHsRev = lsRev + msRev;
   const currDenom = aoNonHsRev + NON_AO_NON_HS_REVENUE;
   const aoCurricShare = currDenom > 0 ? aoNonHsRev / currDenom : 0;
   const costCurricAlloc = CURRICULUM_POOL * aoCurricShare;
 
-  // Direct cost = coaches + math + head + contractors + curriculum allocation
   const directCost = costHead + costMentor + costMath + costContract + costCurricAlloc;
 
-  // Shared overhead (revenue-weighted share of $2,162,055 pool)
-  // This pool already excludes Cindy (in C&C), Natalie (MS Head), Javi (LS Head), Leena (HS Head)
   const revShare = TOTAL_PRISMA_REVENUE > 0 ? revenue / TOTAL_PRISMA_REVENUE : 0;
   const allocatedOH = SHARED_OVERHEAD * revShare;
 
@@ -184,69 +150,93 @@ function computePnL(s) {
   };
 }
 
+// ===== Highlighter wrap — the signature Prisma type treatment =====
+function Highlight({ children, pad = 6 }) {
+  return (
+    <span style={{ position: "relative", display: "inline-block", padding: `0 ${pad}px` }}>
+      <span style={{ position: "absolute", left: 0, right: 0, bottom: 1, height: "36%", background: C.highlighter, zIndex: 0 }} />
+      <span style={{ position: "relative", zIndex: 1 }}>{children}</span>
+    </span>
+  );
+}
+
 // ===== UI components =====
 
 function Slider({ label, value, min, max, step, onChange, format = fmtUSD, help }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-        <label style={{ fontSize: 13, color: C.textSoft }}>{label}</label>
-        <span style={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: C.text }}>{format(value)}</span>
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+        <label style={{ fontFamily: FONT_SANS, fontSize: 14, color: C.text }}>{label}</label>
+        <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: C.text }}>{format(value)}</span>
       </div>
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         style={{ width: "100%", accentColor: C.indigo }} />
-      {help && <p style={{ fontSize: 11, color: C.textFaint, margin: "3px 0 0" }}>{help}</p>}
+      {help && <p style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.textFaint, margin: "4px 0 0" }}>{help}</p>}
     </div>
   );
 }
 
 function Counter({ label, value, onChange, min = 0, max = 200, help }) {
+  const pillBtn = {
+    width: 32, height: 32, border: `0.5px solid ${C.line}`,
+    background: C.paper, borderRadius: 500, cursor: "pointer",
+    fontSize: 16, color: C.text, padding: 0,
+    fontFamily: FONT_SANS,
+  };
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-        <label style={{ fontSize: 13, color: C.textSoft }}>{label}</label>
-        <span style={{ fontSize: 20, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: C.text }}>{value}</span>
+        <label style={{ fontFamily: FONT_SANS, fontSize: 14, color: C.text }}>{label}</label>
+        <span style={{ fontFamily: FONT_SANS, fontSize: 24, fontWeight: 400, fontVariantNumeric: "tabular-nums", color: C.text }}>{value}</span>
       </div>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <button onClick={() => onChange(Math.max(min, value - 1))}
-          style={{ width: 28, height: 28, border: `0.5px solid ${C.line}`, background: C.paper, borderRadius: 4, cursor: "pointer", fontSize: 14, color: C.textSoft, padding: 0 }}>−</button>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button onClick={() => onChange(Math.max(min, value - 1))} style={pillBtn}>−</button>
         <input type="range" min={min} max={max} step={1} value={value}
           onChange={(e) => onChange(parseInt(e.target.value))}
           style={{ flex: 1, accentColor: C.indigo }} />
-        <button onClick={() => onChange(Math.min(max, value + 1))}
-          style={{ width: 28, height: 28, border: `0.5px solid ${C.line}`, background: C.paper, borderRadius: 4, cursor: "pointer", fontSize: 14, color: C.textSoft, padding: 0 }}>+</button>
+        <button onClick={() => onChange(Math.min(max, value + 1))} style={pillBtn}>+</button>
       </div>
-      {help && <p style={{ fontSize: 11, color: C.textFaint, margin: "3px 0 0" }}>{help}</p>}
+      {help && <p style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.textFaint, margin: "4px 0 0" }}>{help}</p>}
     </div>
   );
 }
 
-function Card({ title, children, accent }) {
+function Card({ title, hint, children, accent }) {
   return (
     <div style={{
       background: C.paper,
       border: `0.5px solid ${C.line}`,
-      borderTop: accent ? `2px solid ${accent}` : `0.5px solid ${C.line}`,
-      padding: "18px 22px", borderRadius: 6,
+      borderTop: accent ? `3px solid ${accent}` : `0.5px solid ${C.line}`,
+      padding: "26px 30px", borderRadius: 10,
     }}>
       {title && (
-        <h3 style={{ margin: "0 0 14px", fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textSoft }}>{title}</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 11, fontWeight: 500, color: C.text }}>{title}</h3>
+          {hint && <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.textFaint }}>{hint}</span>}
+        </div>
       )}
       {children}
     </div>
   );
 }
 
-function KPI({ label, value, sublabel, tone }) {
-  let color = C.text;
-  if (tone === "neg") color = C.red;
-  if (tone === "pos") color = C.green;
+function KPI({ label, value, sublabel, tone, hero }) {
+  const isHero = !!hero;
+  const bg = isHero ? C.indigo : C.paper;
+  const fg = isHero ? "#fff" : (tone === "neg" ? "#601212" : C.text);
+  const subFg = isHero ? "rgba(255,255,255,0.82)" : C.textFaint;
+  const labelFg = isHero ? "rgba(255,255,255,0.82)" : C.textSoft;
   return (
-    <div style={{ padding: "16px 18px", background: C.paper, border: `0.5px solid ${C.line}`, borderRadius: 6 }}>
-      <p style={{ margin: 0, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textSoft, fontWeight: 600 }}>{label}</p>
-      <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 500, color, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em" }}>{value}</p>
-      {sublabel && <p style={{ margin: "2px 0 0", fontSize: 11, color: C.textFaint }}>{sublabel}</p>}
+    <div style={{
+      padding: "20px 22px",
+      background: bg,
+      border: `0.5px solid ${isHero ? C.indigo : C.line}`,
+      borderRadius: 10,
+    }}>
+      <p style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 11, color: labelFg, fontWeight: 500 }}>{label}</p>
+      <p style={{ margin: "8px 0 0", fontFamily: FONT_SANS, fontSize: 40, fontWeight: 400, color: fg, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.025em", lineHeight: 1 }}>{value}</p>
+      {sublabel && <p style={{ margin: "8px 0 0", fontFamily: FONT_MONO, fontSize: 11.5, color: subFg }}>{sublabel}</p>}
     </div>
   );
 }
@@ -254,11 +244,11 @@ function KPI({ label, value, sublabel, tone }) {
 // ===== Cohort Cost Ratio Strip =====
 function CohortRatioBar({ label, hasData, revenue, coachCost, ratio, benchmark, showBench, subLabel }) {
   const delta = hasData ? ratio - benchmark : 0;
-  const ratioColor = !hasData
-    ? C.textFaint
-    : ratio > benchmark * 1.2 ? C.red
-    : ratio > benchmark ? C.indigo
-    : C.green;
+  let tone;
+  if (!hasData) tone = C.textFaint;
+  else if (ratio > benchmark * 1.2) tone = C.red;
+  else if (ratio > benchmark) tone = "#f29820"; // goldenrod as 'warn'
+  else tone = C.green;
 
   const maxScale = Math.max(0.6, benchmark * 1.5, ratio * 1.1);
   const barPct = hasData ? Math.min(100, (ratio / maxScale) * 100) : 0;
@@ -266,21 +256,21 @@ function CohortRatioBar({ label, hasData, revenue, coachCost, ratio, benchmark, 
 
   return (
     <div style={{
-      padding: "14px 18px", background: C.paper,
-      border: `0.5px solid ${C.line}`, borderRadius: 6,
-      display: "flex", flexDirection: "column", gap: 10,
+      padding: "18px 20px", background: C.paper,
+      border: `0.5px solid ${C.line}`, borderRadius: 10,
+      display: "flex", flexDirection: "column", gap: 14,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div>
-          <p style={{ margin: 0, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textSoft, fontWeight: 600 }}>{label}</p>
-          <p style={{ margin: "2px 0 0", fontSize: 11, color: C.textFaint }}>
-            {hasData ? `${fmtK(coachCost)} coach / ${fmtK(revenue)} rev` : subLabel || "no learners"}
+          <p style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 11, color: C.textSoft, fontWeight: 500 }}>{label}</p>
+          <p style={{ margin: "4px 0 0", fontFamily: FONT_MONO, fontSize: 11, color: C.textFaint }}>
+            {hasData ? `${fmtK(coachCost)} coach ÷ ${fmtK(revenue)} rev` : subLabel || "no learners"}
           </p>
         </div>
         <div style={{ textAlign: "right" }}>
-          <span style={{ fontSize: 22, fontWeight: 500, color: ratioColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.01em" }}>{hasData ? fmtPct1(ratio) : "–"}</span>
+          <span style={{ fontFamily: FONT_SANS, fontSize: 32, fontWeight: 400, color: tone, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>{hasData ? fmtPct1(ratio) : "–"}</span>
           {showBench && (
-            <p style={{ margin: "2px 0 0", fontSize: 11, color: C.textFaint }}>
+            <p style={{ margin: "4px 0 0", fontFamily: FONT_MONO, fontSize: 11, color: C.textFaint }}>
               bench {fmtPct(benchmark)}
               {hasData && Math.abs(delta) >= 0.005 && (
                 <span style={{ marginLeft: 6, color: delta > 0 ? C.red : C.green, fontWeight: 500 }}>
@@ -291,12 +281,12 @@ function CohortRatioBar({ label, hasData, revenue, coachCost, ratio, benchmark, 
           )}
         </div>
       </div>
-      <div style={{ position: "relative", height: 6, background: C.lineSoft, borderRadius: 3 }}>
+      <div style={{ position: "relative", height: 8, background: C.lineSoft, borderRadius: 4 }}>
         {hasData && (
-          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${barPct}%`, background: ratioColor, borderRadius: 3, transition: "width 0.2s ease" }} />
+          <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${barPct}%`, background: tone, borderRadius: 4, transition: "width 0.24s cubic-bezier(0.2,0.7,0.2,1)" }} />
         )}
         {showBench && (
-          <div style={{ position: "absolute", left: `${benchPct}%`, top: -3, bottom: -3, width: 1.5, background: C.text, opacity: 0.5 }} title={`Benchmark ${fmtPct(benchmark)}`} />
+          <div style={{ position: "absolute", left: `${benchPct}%`, top: -4, bottom: -4, width: 2, background: C.text, opacity: 0.6, borderRadius: 1 }} title={`Benchmark ${fmtPct(benchmark)}`} />
         )}
       </div>
     </div>
@@ -305,14 +295,14 @@ function CohortRatioBar({ label, hasData, revenue, coachCost, ratio, benchmark, 
 
 function CostRatioStrip({ pnl }) {
   return (
-    <div>
+    <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-        <h3 style={{ margin: 0, fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textSoft }}>Coach cost ratio by cohort</h3>
-        <p style={{ margin: 0, fontSize: 11, color: C.textFaint }}>
-          Coach salary ÷ cohort tuition revenue · lower is better
+        <h3 style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 11, fontWeight: 500, color: C.text }}>Coach cost ratio by cohort</h3>
+        <p style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 11, color: C.textSoft }}>
+          Coach salary ÷ cohort tuition · lower is better
         </p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
         <CohortRatioBar
           label="Lower school"
           hasData={pnl.lsTotal > 0}
@@ -355,32 +345,35 @@ function PnLTable({ scenario, pnl }) {
   ];
 
   const headStyle = {
-    textAlign: "left", padding: "10px 0", fontWeight: 600, fontSize: 10,
-    letterSpacing: "0.12em", textTransform: "uppercase", color: C.textSoft,
+    textAlign: "left", padding: "12px 0", fontWeight: 500, fontSize: 11,
+    fontFamily: FONT_MONO, color: C.textSoft,
     borderBottom: `0.5px solid ${C.line}`,
   };
 
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_SANS, fontSize: 14 }}>
       <thead>
         <tr>
           <th style={headStyle}>Line item</th>
-          <th style={{ ...headStyle, textAlign: "right", width: 120 }}>Amount</th>
-          <th style={{ ...headStyle, textAlign: "right", width: 70 }}>% rev</th>
-          <th style={{ ...headStyle, paddingLeft: 16 }}>Detail</th>
+          <th style={{ ...headStyle, textAlign: "right", width: 140 }}>Amount</th>
+          <th style={{ ...headStyle, textAlign: "right", width: 72 }}>% rev</th>
+          <th style={{ ...headStyle, paddingLeft: 20 }}>Detail</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((r, i) => {
-          const isHL = r.highlight;
-          const color = isHL ? (r.amt >= 0 ? C.green : C.red) : C.text;
-          const bg = isHL ? (r.amt >= 0 ? C.greenSoft : C.redSoft) : "transparent";
+          const color = r.highlight ? (r.amt >= 0 ? C.green : C.red) : C.text;
+          const bb = r.rule
+            ? `1px solid ${C.text}`
+            : `0.5px solid ${C.lineSoft}`;
           return (
-            <tr key={i} style={{ background: bg, borderBottom: r.rule ? `0.5px solid ${C.line}` : "none" }}>
-              <td style={{ padding: "9px 0", fontWeight: r.bold ? 500 : 400, color: C.text }}>{r.lbl}</td>
-              <td style={{ padding: "9px 0", textAlign: "right", fontWeight: r.bold ? 500 : 400, color, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(r.amt)}</td>
-              <td style={{ padding: "9px 0", textAlign: "right", color: C.textFaint, fontVariantNumeric: "tabular-nums" }}>{pnl.revenue > 0 ? fmtPct(r.amt / pnl.revenue) : "–"}</td>
-              <td style={{ padding: "9px 0 9px 16px", color: C.textFaint, fontSize: 12 }}>{r.detail}</td>
+            <tr key={i} style={{ borderBottom: bb }}>
+              <td style={{ padding: "12px 0", fontWeight: r.bold ? 500 : 400, color: C.text }}>
+                {r.highlight ? <Highlight>{r.lbl}</Highlight> : r.lbl}
+              </td>
+              <td style={{ padding: "12px 0", textAlign: "right", fontWeight: r.bold ? 500 : 400, color, fontFamily: FONT_MONO, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(r.amt)}</td>
+              <td style={{ padding: "12px 0", textAlign: "right", color: C.textFaint, fontFamily: FONT_MONO, fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{pnl.revenue > 0 ? fmtPct(r.amt / pnl.revenue) : "–"}</td>
+              <td style={{ padding: "12px 0 12px 20px", color: C.textFaint, fontFamily: FONT_MONO, fontSize: 12 }}>{r.detail}</td>
             </tr>
           );
         })}
@@ -398,21 +391,21 @@ function ScenarioTabs({ scenarios, activeIdx, onSwitch, onAdd, onDelete, onRenam
   const commitEdit = () => { if (editingIdx !== null) { onRename(editingIdx, editValue || "Untitled"); setEditingIdx(null); } };
 
   return (
-    <div style={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center", borderBottom: `0.5px solid ${C.line}`, marginBottom: 20 }}>
+    <div style={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "flex-end", borderBottom: `0.5px solid ${C.line}`, marginBottom: 28 }}>
       {scenarios.map((sc, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center" }}>
           {editingIdx === i ? (
             <input autoFocus value={editValue} onChange={(e) => setEditValue(e.target.value)}
               onBlur={commitEdit}
               onKeyDown={(e) => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingIdx(null); }}
-              style={{ padding: "8px 12px", fontSize: 13, border: `1px solid ${C.indigo}`, background: C.paper, width: 240, borderRadius: 4, color: C.text, outline: "none" }} />
+              style={{ margin: "6px 0", padding: "8px 12px", fontFamily: FONT_SANS, fontSize: 14, border: `1px solid ${C.indigo}`, background: C.paper, width: 240, borderRadius: 4, color: C.text, outline: "none" }} />
           ) : (
             <button onClick={() => i === activeIdx ? startEdit(i) : onSwitch(i)}
               title={i === activeIdx ? "Click again to rename" : "Click to switch"}
               style={{
-                padding: "10px 16px", fontSize: 13, background: "transparent", border: "none",
+                padding: "12px 18px 14px", fontFamily: FONT_SANS, fontSize: 14, background: "transparent", border: "none",
                 borderBottom: i === activeIdx ? `2px solid ${C.indigo}` : "2px solid transparent",
-                marginBottom: -1, cursor: "pointer",
+                marginBottom: -0.5, cursor: "pointer",
                 color: i === activeIdx ? C.text : C.textSoft,
                 fontWeight: i === activeIdx ? 500 : 400,
               }}
@@ -420,15 +413,15 @@ function ScenarioTabs({ scenarios, activeIdx, onSwitch, onAdd, onDelete, onRenam
           )}
           {scenarios.length > 1 && i === activeIdx && editingIdx !== i && (
             <button onClick={() => onDelete(i)} title="Delete scenario"
-              style={{ padding: "6px", background: "transparent", border: "none", cursor: "pointer", color: C.textFaint }}>
+              style={{ padding: "6px", background: "transparent", border: "none", cursor: "pointer", color: C.textFaint, borderRadius: 4 }}>
               <Trash2 size={13} />
             </button>
           )}
         </div>
       ))}
       <button onClick={onAdd}
-        style={{ padding: "10px 14px", fontSize: 13, background: "transparent", border: "none", cursor: "pointer", color: C.indigo, display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
-        <Plus size={14} /> New scenario
+        style={{ padding: "12px 14px", fontFamily: FONT_MONO, fontSize: 12, background: "transparent", border: "none", cursor: "pointer", color: C.indigo, display: "flex", alignItems: "center", gap: 6, fontWeight: 500 }}>
+        <Plus size={13} /> New scenario
       </button>
     </div>
   );
@@ -453,31 +446,31 @@ function ComparisonRow({ scenarios }) {
   ];
 
   const headStyle = {
-    textAlign: "left", padding: "10px 12px 10px 0", fontWeight: 600, fontSize: 10,
-    letterSpacing: "0.12em", textTransform: "uppercase", color: C.textSoft,
+    textAlign: "left", padding: "10px 14px 10px 0", fontWeight: 500, fontSize: 11,
+    fontFamily: FONT_MONO, color: C.textSoft,
     borderBottom: `0.5px solid ${C.line}`,
   };
 
   return (
-    <div style={{ marginTop: 32 }}>
-      <h3 style={{ margin: "0 0 14px", fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textSoft }}>Scenario comparison</h3>
-      <div style={{ background: C.paper, border: `0.5px solid ${C.line}`, padding: "18px 22px", borderRadius: 6, overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+    <div style={{ marginTop: 36 }}>
+      <h3 style={{ margin: "0 0 14px", fontFamily: FONT_MONO, fontSize: 11, fontWeight: 500, color: C.text }}>Scenario comparison</h3>
+      <div style={{ background: C.paper, border: `0.5px solid ${C.line}`, padding: "24px 28px", borderRadius: 10, overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: FONT_SANS, fontSize: 13 }}>
           <thead>
             <tr>
               <th style={headStyle}>Metric</th>
               {scenarios.map((sc, i) => (
-                <th key={i} style={{ ...headStyle, textAlign: "right", padding: "10px 12px", color: C.text, maxWidth: 180, textTransform: "none", fontSize: 11, letterSpacing: "0" }}>{sc.name}</th>
+                <th key={i} style={{ ...headStyle, textAlign: "right", padding: "10px 14px", color: C.text, fontFamily: FONT_SANS, fontSize: 12.5, maxWidth: 200 }}>{sc.name}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {metrics.map((m, i) => (
               <tr key={i} style={{ borderBottom: `0.5px solid ${C.lineSoft}` }}>
-                <td style={{ padding: "9px 12px 9px 0", color: C.textSoft }}>
+                <td style={{ padding: "10px 14px 10px 0", color: C.textSoft, fontFamily: FONT_SANS, fontSize: 13 }}>
                   {m.lbl}
                   {m.bench !== undefined && (
-                    <span style={{ fontSize: 10, color: C.textFaint, marginLeft: 6 }}>bench {fmtPct(m.bench)}</span>
+                    <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textFaint, marginLeft: 6 }}>bench {fmtPct(m.bench)}</span>
                   )}
                 </td>
                 {m.values.map((v, j) => {
@@ -487,11 +480,11 @@ function ComparisonRow({ scenarios }) {
                     else if (v > 0) color = C.green;
                   } else if (m.bench !== undefined) {
                     if (v > m.bench * 1.2) color = C.red;
-                    else if (v > m.bench) color = C.indigo;
+                    else if (v > m.bench) color = "#f29820";
                     else color = C.green;
                   }
                   return (
-                    <td key={j} style={{ textAlign: "right", padding: "9px 12px", color, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+                    <td key={j} style={{ textAlign: "right", padding: "10px 14px", color, fontFamily: FONT_MONO, fontSize: 13, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
                       {m.fmt(v)}
                     </td>
                   );
@@ -513,15 +506,37 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState("");
   const [showPresets, setShowPresets] = useState(false);
 
+  // Inject Google Fonts once on mount (so no index.html changes are required)
+  useEffect(() => {
+    const id = "prisma-fonts";
+    if (document.getElementById(id)) return;
+    const link = document.createElement("link");
+    link.id = id;
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=Roboto+Mono:wght@400;500&display=swap";
+    document.head.appendChild(link);
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
-        const result = await window.storage.get("ao-scenarios-v2");
-        if (result && result.value) {
-          const parsed = JSON.parse(result.value);
-          if (parsed.scenarios && parsed.scenarios.length) {
-            setScenarios(parsed.scenarios);
-            setActiveIdx(Math.min(parsed.activeIdx || 0, parsed.scenarios.length - 1));
+        if (window.storage && window.storage.get) {
+          const result = await window.storage.get("ao-scenarios-v2");
+          if (result && result.value) {
+            const parsed = JSON.parse(result.value);
+            if (parsed.scenarios && parsed.scenarios.length) {
+              setScenarios(parsed.scenarios);
+              setActiveIdx(Math.min(parsed.activeIdx || 0, parsed.scenarios.length - 1));
+            }
+          }
+        } else {
+          const raw = localStorage.getItem("ao-scenarios-v2");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed.scenarios && parsed.scenarios.length) {
+              setScenarios(parsed.scenarios);
+              setActiveIdx(Math.min(parsed.activeIdx || 0, parsed.scenarios.length - 1));
+            }
           }
         }
       } catch (e) { /* no prior save */ }
@@ -533,7 +548,12 @@ export default function App() {
     if (!loaded) return;
     const timer = setTimeout(async () => {
       try {
-        await window.storage.set("ao-scenarios-v2", JSON.stringify({ scenarios, activeIdx }));
+        const payload = JSON.stringify({ scenarios, activeIdx });
+        if (window.storage && window.storage.set) {
+          await window.storage.set("ao-scenarios-v2", payload);
+        } else {
+          localStorage.setItem("ao-scenarios-v2", payload);
+        }
         setSaveStatus("Saved");
         setTimeout(() => setSaveStatus(""), 1500);
       } catch (e) { setSaveStatus("Save failed"); }
@@ -582,41 +602,61 @@ export default function App() {
   };
 
   if (!loaded) {
-    return <div style={{ padding: 40, color: C.textSoft, background: C.bone, minHeight: "100vh" }}>Loading saved scenarios…</div>;
+    return <div style={{ padding: 40, color: C.textSoft, background: C.bone, minHeight: "100vh", fontFamily: FONT_SANS }}>Loading saved scenarios…</div>;
   }
 
   const btnStyle = {
-    padding: "8px 14px", fontSize: 12, background: "transparent",
-    border: `1px solid ${C.text}`, cursor: "pointer", borderRadius: 4,
-    display: "flex", alignItems: "center", gap: 6, color: C.text, fontWeight: 500,
+    padding: "0 16px", height: 38, fontSize: 12,
+    fontFamily: FONT_MONO, fontWeight: 500,
+    background: "transparent", border: `1px solid ${C.text}`,
+    borderRadius: 500, cursor: "pointer",
+    display: "inline-flex", alignItems: "center", gap: 6, color: C.text,
   };
+
+  // Resolve logo URL under Vite/CRA/GH Pages. Falls back to "/prisma-wordmark-purple.svg".
+  const BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL) || "/";
+  const LOGO = `${BASE.replace(/\/$/, "")}/prisma-wordmark-purple.svg`;
 
   return (
     <div style={{
       background: C.bone, minHeight: "100vh",
-      padding: "32px 28px 60px",
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      padding: "40px 56px 72px",
+      fontFamily: FONT_SANS,
       color: C.text,
     }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1290, margin: "0 auto" }}>
 
         {/* Masthead */}
-        <header style={{ marginBottom: 24, borderBottom: `1px solid ${C.text}`, paddingBottom: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 20, flexWrap: "wrap" }}>
-            <div>
-              <p style={{ margin: 0, fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: C.indigo, fontWeight: 600 }}>Prisma · Finance</p>
-              <h1 style={{ margin: "6px 0 0", fontSize: 32, fontWeight: 500, letterSpacing: "-0.015em", color: C.text }}>A&amp;O profitability planner</h1>
-              <p style={{ margin: "4px 0 0", fontSize: 13, color: C.textSoft }}>Scenario model for the Asia &amp; Oceania program · SY26-27 basis</p>
+        <header style={{ marginBottom: 32, borderBottom: `1px solid ${C.text}`, paddingBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 40, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
+              <img src={LOGO} alt="Prisma" style={{ height: 28, width: "auto", display: "block" }} onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              <span style={{ width: 1, height: 18, background: C.line, display: "inline-block" }} />
+              <p style={{ margin: 0, fontFamily: FONT_MONO, fontSize: 11, color: C.text, fontWeight: 500 }}>Finance · Internal</p>
             </div>
+            <h1 style={{ margin: 0, fontFamily: FONT_SANS, fontSize: 52, fontWeight: 400, letterSpacing: "-0.02em", color: C.text, lineHeight: 1.05, maxWidth: 720 }}>
+              A&amp;O <Highlight>profitability planner</Highlight>
+              <span style={{ color: C.textFaint, fontWeight: 300, marginLeft: 6 }}> –</span>
+            </h1>
+            <p style={{ margin: "10px 0 0", fontFamily: FONT_MONO, fontSize: 13, color: C.textSoft, maxWidth: 560 }}>
+              Scenario model for the Asia &amp; Oceania program, SY26-27 basis.
+            </p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+            <span style={{
+              fontFamily: FONT_MONO, fontSize: 11, color: C.textSoft,
+              display: "inline-flex", alignItems: "center", gap: 6,
+              opacity: saveStatus ? 1 : 0, transition: "opacity 240ms",
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.green }} />
+              {saveStatus || "Saved"}
+            </span>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {saveStatus && (
-                <span style={{ fontSize: 11, color: C.green, fontWeight: 500 }}>● {saveStatus}</span>
-              )}
               <button onClick={() => setShowPresets(!showPresets)} style={btnStyle}>
                 <Copy size={12} /> Load preset
               </button>
               <button onClick={resetCurrent} style={btnStyle}>
-                <RotateCcw size={12} /> Reset current
+                <RotateCcw size={12} /> Reset
               </button>
             </div>
           </div>
@@ -624,12 +664,12 @@ export default function App() {
 
         {/* Preset dropdown */}
         {showPresets && (
-          <div style={{ marginBottom: 20, background: C.sky, border: `0.5px solid ${C.line}`, padding: "14px 18px", borderRadius: 6 }}>
-            <p style={{ margin: "0 0 10px", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: C.textSoft, fontWeight: 600 }}>Presets</p>
+          <div style={{ marginBottom: 24, background: C.indigoSoft, border: `0.5px solid ${C.line}`, padding: "16px 20px", borderRadius: 10 }}>
+            <p style={{ margin: "0 0 10px", fontFamily: FONT_MONO, fontSize: 11, color: C.text, fontWeight: 500 }}>Choose a preset to branch into a new scenario</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {PRESET_SCENARIOS.map((p, i) => (
                 <button key={i} onClick={() => loadPreset(p)}
-                  style={{ padding: "7px 12px", fontSize: 12, background: C.paper, border: `0.5px solid ${C.line}`, cursor: "pointer", borderRadius: 4, color: C.text }}>
+                  style={{ padding: "8px 14px", fontFamily: FONT_MONO, fontSize: 12, background: C.paper, border: `0.5px solid ${C.text}`, cursor: "pointer", borderRadius: 500, color: C.text }}>
                   {p.name}
                 </button>
               ))}
@@ -644,25 +684,22 @@ export default function App() {
           onDelete={deleteScenario} onRename={renameScenario}
         />
 
-        {/* Cost ratio strip — sits at top per request */}
-        <div style={{ marginBottom: 20 }}>
-          <CostRatioStrip pnl={pnl} />
-        </div>
+        {/* Cost ratio strip */}
+        <CostRatioStrip pnl={pnl} />
 
         {/* KPI row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
-          <KPI label="Total learners" value={pnl.aoTotal} />
-          <KPI label="Revenue" value={fmtK(pnl.revenue)} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
+          <KPI label="Total learners" value={pnl.aoTotal} sublabel={`${pnl.lsTotal} LS · ${pnl.msTotal} MS · ${scenario.hsLearners} HS`} />
+          <KPI label="Revenue" value={fmtK(pnl.revenue)} sublabel={`${fmtPct1(pnl.revShare)} of Prisma total`} />
           <KPI label="Direct contribution" value={fmtK(pnl.directContrib)}
             sublabel={`${fmtPct(pnl.directMargin)} margin`}
             tone={pnl.directContrib < 0 ? "neg" : "pos"} />
-          <KPI label="Fully loaded" value={fmtK(pnl.fullyLoaded)}
-            sublabel={`${fmtPct(pnl.loadedMargin)} margin`}
-            tone={pnl.fullyLoaded < 0 ? "neg" : "pos"} />
+          <KPI hero label="Fully loaded" value={fmtK(pnl.fullyLoaded)}
+            sublabel={`${fmtPct(pnl.loadedMargin)} margin · after shared overhead`} />
         </div>
 
         {/* Input grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
 
           <Card title="Salaries & direct costs">
             <Slider label="Head of A&O" value={scenario.headSalary} min={80000} max={200000} step={1000}
@@ -671,9 +708,9 @@ export default function App() {
               onChange={(v) => update("mentorSalary", v)} />
             <Slider label="Math coach" value={scenario.mathSalary} min={0} max={120000} step={500}
               onChange={(v) => update("mathSalary", v)} />
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -6, marginBottom: 10, fontSize: 12, color: C.textSoft }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "-4px 0 12px", fontFamily: FONT_SANS, fontSize: 13, color: C.textSoft }}>
               <input type="checkbox" checked={scenario.mathEnabled} onChange={(e) => update("mathEnabled", e.target.checked)} style={{ accentColor: C.indigo }} />
-              Include math coach
+              Include math coach in costs
             </label>
             <Slider label="Contractors (annual)" value={scenario.contractors} min={0} max={200000} step={1000}
               onChange={(v) => update("contractors", v)} help="Supplemental support, curriculum, HS contractors" />
@@ -701,37 +738,38 @@ export default function App() {
               onChange={(v) => update("pcRate", v)} help="Applied to LS + MS parent coach learners" />
           </Card>
 
-          <Card title="Auto-hired coaches (override if needed)" accent={C.indigo}>
+          <Card title="Auto-hired coaches" hint="override if needed" accent={C.indigo}>
             {[
               { key: "ls", label: "LS mentor coaches", count: pnl.lsCoaches, auto: pnl.lsAuto, override: scenario.lsOverride, updateKey: "lsOverride", threshold: LS_THRESHOLD, total: pnl.lsTotal, prefix: "LS" },
               { key: "ms", label: "MS mentor coaches", count: pnl.msCoaches, auto: pnl.msAuto, override: scenario.msOverride, updateKey: "msOverride", threshold: MS_THRESHOLD, total: pnl.msTotal, prefix: "MS" },
               { key: "hs", label: "HS mentor coaches", count: pnl.hsCoaches, auto: pnl.hsAuto, override: scenario.hsOverride, updateKey: "hsOverride", threshold: HS_THRESHOLD, total: scenario.hsLearners, prefix: "HS" },
             ].map((row, idx, arr) => (
-              <div key={row.key} style={{ marginBottom: idx < arr.length - 1 ? 16 : 0 }}>
+              <div key={row.key} style={{ marginBottom: idx < arr.length - 1 ? 18 : 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                  <label style={{ fontSize: 13, color: C.textSoft }}>{row.label}</label>
-                  <span style={{ fontSize: 20, fontWeight: 500, fontVariantNumeric: "tabular-nums", color: C.text }}>{row.count}</span>
+                  <label style={{ fontFamily: FONT_SANS, fontSize: 14, color: C.text }}>{row.label}</label>
+                  <span style={{ fontFamily: FONT_SANS, fontSize: 24, fontWeight: 400, fontVariantNumeric: "tabular-nums", color: C.text }}>{row.count}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{
-                    fontSize: 11, padding: "3px 8px", borderRadius: 4,
-                    background: row.override !== null ? C.sky : C.paper,
-                    border: `0.5px solid ${C.line}`, color: C.textSoft,
-                  }}>Auto: {row.auto}</span>
+                    fontFamily: FONT_MONO, fontSize: 11, padding: "5px 10px", borderRadius: 500,
+                    background: row.override !== null ? C.indigoSoft : C.paper,
+                    border: `0.5px solid ${row.override !== null ? C.indigoSoft : C.line}`,
+                    color: C.textSoft,
+                  }}>Auto {row.auto}</span>
                   <input type="number" placeholder="override"
                     value={row.override ?? ""}
                     onChange={(e) => update(row.updateKey, e.target.value === "" ? null : parseInt(e.target.value))}
                     min={0}
-                    style={{ width: 80, height: 30, fontSize: 13, padding: "0 10px", border: `0.5px solid ${C.line}`, background: C.paper, borderRadius: 4, color: C.text, outline: "none" }}
+                    style={{ width: 76, height: 32, fontFamily: FONT_MONO, fontSize: 13, padding: "0 10px", border: `0.5px solid ${C.line}`, background: C.paper, borderRadius: 6, color: C.text, outline: "none", fontVariantNumeric: "tabular-nums" }}
                   />
                   {row.override !== null && (
                     <button onClick={() => update(row.updateKey, null)}
-                      style={{ fontSize: 11, background: "transparent", border: "none", cursor: "pointer", color: C.indigo }}>
+                      style={{ fontFamily: FONT_MONO, fontSize: 11, background: "transparent", border: "none", cursor: "pointer", color: C.indigo }}>
                       clear
                     </button>
                   )}
                 </div>
-                <p style={{ margin: "6px 0 0", fontSize: 11, color: C.textFaint }}>
+                <p style={{ margin: "6px 0 0", fontFamily: FONT_MONO, fontSize: 11, color: C.textFaint }}>
                   {row.prefix === "HS"
                     ? `Rule: 1 coach per ${row.threshold} HS learners. Currently ${row.total} HS learners. Head of A&O leads by default.`
                     : `Rule: 1 coach per ${row.threshold} ${row.prefix} learners (Full + Parent coach). Currently ${row.total} ${row.prefix} learners.`}
@@ -744,22 +782,27 @@ export default function App() {
 
         {/* Insight strip */}
         <div style={{
-          background: pnl.fullyLoaded >= 0 ? C.greenSoft : C.sky,
-          border: `0.5px solid ${pnl.fullyLoaded >= 0 ? C.green : C.indigo}`,
-          padding: "14px 20px", marginBottom: 16, borderRadius: 6,
-          display: "flex", alignItems: "flex-start", gap: 12,
+          background: pnl.fullyLoaded >= 0 ? C.greenSoft : C.redSoft,
+          border: `0.5px solid ${pnl.fullyLoaded >= 0 ? C.green : C.red}`,
+          padding: "18px 22px", marginBottom: 24, borderRadius: 10,
+          display: "flex", alignItems: "flex-start", gap: 16,
         }}>
-          <Info size={16} color={pnl.fullyLoaded >= 0 ? C.green : C.indigo} style={{ flexShrink: 0, marginTop: 2 }} />
-          <p style={{ margin: 0, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+          <div style={{
+            flexShrink: 0, width: 36, height: 36, borderRadius: 500,
+            background: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontFamily: FONT_SANS, fontSize: 18, fontWeight: 500,
+            color: pnl.fullyLoaded >= 0 ? C.green : C.red,
+          }}>{pnl.fullyLoaded >= 0 ? "✓" : "!"}</div>
+          <p style={{ margin: 0, fontFamily: FONT_SANS, fontSize: 15, color: C.text, lineHeight: 1.45, paddingTop: 4 }}>
             {pnl.fullyLoaded >= 0 ? (
-              <>Fully loaded positive by {fmtK(pnl.fullyLoaded)}. Direct margin {fmtPct(pnl.directMargin)} on {pnl.aoTotal} learners.</>
+              <>Fully-loaded positive by <strong style={{ fontWeight: 500 }}>{fmtK(pnl.fullyLoaded)}</strong>. Direct margin is <strong style={{ fontWeight: 500 }}>{fmtPct(pnl.directMargin)}</strong> on {pnl.aoTotal} learners — A&amp;O is carrying its share of shared overhead and still contributing.</>
             ) : (
-              <>Fully loaded deficit of {fmtK(-pnl.fullyLoaded)}. At current blended rate of {fmtUSD(Math.round(pnl.revenue / Math.max(pnl.aoTotal, 1)))}/learner, need approximately {pnl.aoTotal > 0 ? Math.ceil(-pnl.fullyLoaded / (pnl.revenue / pnl.aoTotal)) : 0} more learners to break even — assuming existing coach capacity absorbs them.</>
+              <>Fully-loaded deficit of <strong style={{ fontWeight: 500 }}>{fmtK(-pnl.fullyLoaded)}</strong>. At the current blended rate of {fmtUSD(Math.round(pnl.revenue / Math.max(pnl.aoTotal, 1)))}/learner, you'd need roughly <strong style={{ fontWeight: 500 }}>{pnl.aoTotal > 0 ? Math.ceil(-pnl.fullyLoaded / (pnl.revenue / pnl.aoTotal)) : 0} more learners</strong> to break even — assuming existing coach capacity absorbs them.</>
             )}
           </p>
         </div>
 
-        {/* P&L table */}
+        {/* P&L */}
         <Card title="Profit & loss build">
           <PnLTable scenario={scenario} pnl={pnl} />
         </Card>
@@ -768,9 +811,9 @@ export default function App() {
         <ComparisonRow scenarios={scenarios} />
 
         {/* Footer */}
-        <footer style={{ marginTop: 40, paddingTop: 18, borderTop: `0.5px solid ${C.line}`, fontSize: 11, color: C.textFaint, lineHeight: 1.6 }}>
+        <footer style={{ marginTop: 48, paddingTop: 20, borderTop: `0.5px solid ${C.line}`, fontFamily: FONT_MONO, fontSize: 11.5, color: C.textFaint, lineHeight: 1.6, maxWidth: 1000 }}>
           <p style={{ margin: 0 }}>
-            Shared overhead ({fmtK(SHARED_OVERHEAD)}) allocated revenue-weighted against Prisma total ({fmtK(TOTAL_PRISMA_REVENUE)}). Curriculum pool ({fmtK(CURRICULUM_POOL)}) allocated revenue-weighted across all non-HS learners in A&amp;O, EMEA, and Americas. Excludes Cindy (Community & Culture, Americas + EMEA only), Leena (HS Head of School), Natalie (MS Head of School), Javi (LS Head of School) — all directly attributed to their own tiers elsewhere. Scenarios save automatically. Coach thresholds: {LS_THRESHOLD} LS, {MS_THRESHOLD} MS, {HS_THRESHOLD} HS. Benchmarks: LS 32%, MS 25%, HS 50% (derived from Americas HS at scale: coaches + Head of School).
+            Shared overhead ({fmtK(SHARED_OVERHEAD)}) allocated revenue-weighted against Prisma total ({fmtK(TOTAL_PRISMA_REVENUE)}). Curriculum pool ({fmtK(CURRICULUM_POOL)}) allocated revenue-weighted across all non-HS learners in A&amp;O, EMEA, and Americas. Excludes Cindy (Community &amp; Culture, Americas + EMEA only), Leena (HS Head of School), Natalie (MS Head of School), Javi (LS Head of School) — all directly attributed to their own tiers elsewhere. Scenarios save automatically. Coach thresholds: {LS_THRESHOLD} LS, {MS_THRESHOLD} MS, {HS_THRESHOLD} HS. Benchmarks: LS 32%, MS 25%, HS 50% (derived from Americas HS at scale: coaches + Head of School).
           </p>
         </footer>
 
